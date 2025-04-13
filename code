@@ -1,0 +1,262 @@
+import csv
+import random
+import tkinter as tk
+from tkinter import messagebox
+
+
+class QuizApp :
+    def __init__(self, master) :
+        self.master = master
+        master.title("Quiz di Tedesco")
+
+        # Imposta la dimensione della finestra (ad esempio 800x600)
+        master.geometry("800x600")
+
+        # Carica i vocaboli dal CSV usando la mappatura fissa delle colonne (inclusa la nuova "Level")
+        self.vocaboli = self.carica_vocaboli("C:\\Users\\marco\\Documents\\Python\\German\\vocaboli.csv")
+
+        # Variabili di stato
+        # Aggiunto "contestuale" come possibile modalità
+        self.quiz_mode = tk.StringVar(value="traduzione")
+        self.num_domande = tk.IntVar(value=5)
+        self.score = 0
+        self.current_question = 0
+        self.current_list = []
+        self.current_mode = "traduzione"
+        self.summary_details = []  # Per il riepilogo finale
+
+        # Nuove variabili per filtrare livello e type
+        self.level_filter = tk.StringVar(value="Tutti")
+        self.type_filter = tk.StringVar(value="Tutti")
+
+        # Frame del menu iniziale
+        self.menu_frame = tk.Frame(master)
+        self.menu_frame.pack(pady=20)
+
+        tk.Label(self.menu_frame, text="Choose the exercise:", font=("Helvetica", 16)).pack(pady=5)
+        tk.Radiobutton(self.menu_frame, text="Translation", variable=self.quiz_mode, value="traduzione",
+                       font=("Helvetica", 14)).pack()
+        tk.Radiobutton(self.menu_frame, text="Articles", variable=self.quiz_mode, value="articolo",
+                       font=("Helvetica", 14)).pack()
+        tk.Radiobutton(self.menu_frame, text="Guess the work", variable=self.quiz_mode, value="contestuale",
+                       font=("Helvetica", 14)).pack()
+
+        tk.Label(self.menu_frame, text="Number of questions (max 20):", font=("Helvetica", 14)).pack(pady=5)
+        self.entry_num = tk.Entry(self.menu_frame, textvariable=self.num_domande, font=("Helvetica", 14))
+        self.entry_num.pack()
+
+        # Aggiunta del filtro per livello
+        tk.Label(self.menu_frame, text="Choose the level:", font=("Helvetica", 14)).pack(pady=5)
+        levels = ["Tutti", "A1.1", "A1.2"]
+        tk.OptionMenu(self.menu_frame, self.level_filter, *levels).pack()
+
+        # Aggiunta del filtro per type
+        tk.Label(self.menu_frame, text="Choose the type:", font=("Helvetica", 14)).pack(pady=5)
+        types = ["Tutti", "Noun", "Adj", "Verb", "Adv"]
+        tk.OptionMenu(self.menu_frame, self.type_filter, *types).pack()
+
+        self.start_button = tk.Button(self.menu_frame, text="Inizia Quiz", command=self.start_quiz,
+                                      font=("Helvetica", 14))
+        self.start_button.pack(pady=10)
+
+        # Frame per il quiz (inizialmente nascosto)
+        self.quiz_frame = tk.Frame(master)
+
+        self.question_label = tk.Label(self.quiz_frame, text="", font=("Helvetica", 16))
+        self.question_label.pack(pady=10)
+
+        self.answer_entry = tk.Entry(self.quiz_frame, font=("Helvetica", 14))
+        self.answer_entry.pack(pady=5)
+        # Bind del tasto Invio per inviare la risposta
+        self.answer_entry.bind("<Return>", self.submit_answer)
+
+        self.submit_button = tk.Button(self.quiz_frame, text="Rispondi", command=self.submit_answer,
+                                       font=("Helvetica", 14))
+        self.submit_button.pack(pady=5)
+
+        self.feedback_label = tk.Label(self.quiz_frame, text="", font=("Helvetica", 14))
+        self.feedback_label.pack(pady=5)
+
+        # Label per il conteggio delle risposte corrette
+        self.score_label = tk.Label(self.quiz_frame, text="Right answers: 0", font=("Helvetica", 14))
+        self.score_label.pack(pady=5)
+
+        # Widget Text per lo storico delle risposte con scrollbar
+        tk.Label(self.quiz_frame, text="Answers:", font=("Helvetica", 14, "bold")).pack(pady=(20, 5))
+        history_frame = tk.Frame(self.quiz_frame)
+        history_frame.pack()
+        self.history_text = tk.Text(history_frame, width=100, height=10, font=("Helvetica", 12))
+        self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar = tk.Scrollbar(history_frame, orient=tk.VERTICAL, command=self.history_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.history_text.config(yscrollcommand=scrollbar.set, state="disabled")
+        # Definizione dei tag per i colori
+        self.history_text.tag_config("correct", foreground="green")
+        self.history_text.tag_config("wrong", foreground="red")
+        self.history_text.tag_config("normal", foreground="black")
+
+    def carica_vocaboli(self, nome_file) :
+        """
+        Carica il vocabolario dal file CSV usando la mappatura fissa:
+        Ordine delle colonne:
+        Level, Article, Singular, Plural, Type, NounClass, Translation, Example, ExampleIT
+        L'intestazione viene ignorata.
+        """
+        vocaboli = []
+        keys = ["Level", "Article", "Singular", "Plural", "Type", "NounClass", "Translation", "Example", "ExampleIT"]
+        try :
+            with open(nome_file, 'r', encoding='utf-8') as f :
+                reader = csv.reader(f)
+                header = next(reader)  # Salta l'intestazione
+                for row in reader :
+                    if len(row) < len(keys) :
+                        continue
+                    entry = {keys[i] : row[i].strip() for i in range(len(keys))}
+                    vocaboli.append(entry)
+        except FileNotFoundError :
+            messagebox.showerror("Errore", f"Il file {nome_file} non è stato trovato.")
+            self.master.destroy()
+        return vocaboli
+
+    def start_quiz(self) :
+        # Imposta il limite massimo a 20 domande
+        if self.num_domande.get() > 20 :
+            messagebox.showinfo("Attenzione", "Il numero massimo di domande è 20. Verranno poste 20 domande.")
+            self.num_domande.set(20)
+
+        self.current_mode = self.quiz_mode.get()
+        # Filtra il vocabolario in base al livello e al type scelti
+        filtered_vocab = self.vocaboli
+        if self.level_filter.get() != "Tutti" :
+            filtered_vocab = [v for v in filtered_vocab if v["Level"] == self.level_filter.get()]
+        if self.type_filter.get() != "Tutti" :
+            filtered_vocab = [v for v in filtered_vocab if v["Type"].lower() == self.type_filter.get().lower()]
+        if self.current_mode == "articolo" :
+            # Per il quiz sull'articolo, forziamo il filtro su Noun
+            filtered_vocab = [v for v in filtered_vocab if v["Type"].lower() == "noun"]
+            if not filtered_vocab :
+                messagebox.showerror("Errore",
+                                     "Non ci sono sostantivi nel vocabolario per il quiz sull'articolo con i filtri selezionati.")
+                return
+        if not filtered_vocab :
+            messagebox.showerror("Errore", "Non sono stati trovati vocaboli per i filtri selezionati.")
+            return
+        self.current_list = filtered_vocab
+
+        self.score = 0
+        self.current_question = 0
+        self.summary_details = []  # azzera il riepilogo
+        # Aggiorna il label del punteggio
+        self.score_label.config(text="Risposte corrette: 0")
+        # Pulisci lo storico visuale
+        self.history_text.config(state="normal")
+        self.history_text.delete("1.0", tk.END)
+        self.history_text.config(state="disabled")
+        self.menu_frame.pack_forget()
+        self.quiz_frame.pack(pady=20)
+        self.next_question()
+
+    def next_question(self) :
+        if self.current_question >= self.num_domande.get() :
+            self.end_quiz()
+            return
+        self.current_question += 1
+        self.current_vocab = random.choice(self.current_list)
+        if self.current_mode == "traduzione" :
+            question_text = f"Domanda {self.current_question}: Singolare: {self.current_vocab['Singular']}\nQual è la traduzione in italiano?"
+        elif self.current_mode == "articolo" :
+            question_text = f"Domanda {self.current_question}: Singolare: {self.current_vocab['Singular']}\nQual è l'articolo corretto?"
+        elif self.current_mode == "contestuale" :
+            # Utilizza la frase d'esempio e sostituisce il vocabolo (Singular) con un vuoto
+            sentence = self.current_vocab["Example"]
+            target = self.current_vocab["Singular"]
+            # Sostituisce il target nella frase con "____"
+            sentence_missing = sentence.replace(target, "____")
+            question_text = f"Domanda {self.current_question}: Completa la frase:\n{sentence_missing}"
+        self.question_label.config(text=question_text)
+        self.answer_entry.delete(0, tk.END)
+        self.feedback_label.config(text="")
+
+    def submit_answer(self, event=None) :
+        user_answer = self.answer_entry.get().strip().lower()
+        correct = False
+        if self.current_mode == "traduzione" :
+            correct_answer = self.current_vocab['Translation'].lower()
+            if user_answer == correct_answer :
+                feedback = "CORRECT :)"
+                self.score += 1
+                correct = True
+            else :
+                feedback = f"WRONG :( - Correct: {self.current_vocab['Translation']}"
+            log_entry = f"{self.current_vocab['Singular']} | Your answer: {user_answer}"
+            if not correct :
+                log_entry += f" | Correct: {self.current_vocab['Translation']}"
+        elif self.current_mode == "articolo" :
+            correct_answer = self.current_vocab['Article'].lower()
+            translation = self.current_vocab['Translation']
+            if user_answer == correct_answer :
+                feedback = f"CORRECT :) - Traduzione: {translation}"
+                self.score += 1
+                correct = True
+            else :
+                feedback = f"WRONG :( - Correct: {self.current_vocab['Article']} - Traduzione: {translation}"
+            log_entry = f"{self.current_vocab['Singular']} ({self.current_vocab['Translation']}) | Your answer: {user_answer}"
+            if not correct :
+                log_entry += f" | Correct: {self.current_vocab['Article']}"
+        elif self.current_mode == "contestuale" :
+            # In modalità contestuale, il vocabolo da inserire è il campo "Singular"
+            correct_answer = self.current_vocab['Singular'].lower()
+            if user_answer == correct_answer :
+                feedback = f"CORRECT :)"
+                self.score += 1
+                correct = True
+            else :
+                feedback = f"WRONG :( - Correct: {self.current_vocab['Singular']}"
+            log_entry = f"Completa: {self.current_vocab['Singular']} | Your answer: {user_answer}"
+            if not correct :
+                log_entry += f" | Correct: {self.current_vocab['Singular']}"
+
+        self.feedback_label.config(text=feedback)
+        # Aggiorna il label del punteggio
+        self.score_label.config(text=f"Risposte corrette: {self.score}")
+
+        # Prepara il log completo con il numero della domanda
+        full_log = f"Q{self.current_question}: " + log_entry
+        self.summary_details.append(full_log)
+
+        # Aggiorna il box dello storico con il pallino colorato e la stringa in nero
+        self.history_text.config(state="normal")
+        if correct :
+            self.history_text.insert(tk.END, f"Q{self.current_question}: ●", "correct")
+        else :
+            self.history_text.insert(tk.END, f"Q{self.current_question}: ●", "wrong")
+        self.history_text.insert(tk.END, " | " + log_entry + "\n", "normal")
+        self.history_text.config(state="disabled")
+
+        # Passa alla domanda successiva dopo 1 secondo
+        self.master.after(1000, self.next_question)
+
+    def end_quiz(self) :
+        self.quiz_frame.pack_forget()
+        # Crea un riepilogo dettagliato da mostrare in una finestra Toplevel
+        summary_text = f"Hai totalizzato {self.score} punti su {self.num_domande.get()}.\n\nDettagli:\n"
+        for entry in self.summary_details :
+            summary_text += entry + "\n"
+        summary_window = tk.Toplevel(self.master)
+        summary_window.title("Quiz Terminato")
+        summary_window.geometry("1200x800")  # Dimensioni maggiorate
+        text_widget = tk.Text(summary_window, wrap=tk.WORD, font=("Helvetica", 14))
+        # Configura i tag per i colori nel riepilogo finale
+        text_widget.tag_config("wrong", foreground="red")
+        text_widget.tag_config("correct", foreground="black")
+        text_widget.insert(tk.END, summary_text)
+        text_widget.config(state="disabled")
+        text_widget.pack(expand=True, fill=tk.BOTH)
+        self.menu_frame.pack(pady=20)
+
+
+if __name__ == "__main__" :
+    root = tk.Tk()
+    app = QuizApp(root)
+    root.mainloop()
+
